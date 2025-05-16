@@ -76,14 +76,20 @@ static const NSString * CSToastQueueKey             = @"CSToastQueueKey";
 }
 
 - (void)makeToast:(NSString *)message duration:(NSTimeInterval)duration position:(id)position style:(CSToastStyle *)style {
-    UIView *toast = [self toastViewForMessage:message title:nil image:nil style:style];
+    UIView *toast = [self toastViewForMessage:message title:nil image:nil style:style buttonStyle:nil];
     [self showToast:toast duration:duration position:position completion:nil];
 }
 
 - (void)makeToast:(NSString *)message duration:(NSTimeInterval)duration position:(id)position title:(NSString *)title image:(UIImage *)image style:(CSToastStyle *)style completion:(void(^)(BOOL didTap))completion {
-    UIView *toast = [self toastViewForMessage:message title:title image:image style:style];
+    UIView *toast = [self toastViewForMessage:message title:title image:image style:style buttonStyle:nil];
     [self showToast:toast duration:duration position:position completion:completion];
 }
+
+- (void)makeToast:(NSString *)message duration:(NSTimeInterval)duration position:(id)position title:(NSString *)title image:(UIImage *)image style:(CSToastStyle *)style buttonStyle:(CSToastStyle *)buttonStyle completion:(void(^)(BOOL didTap))completion {
+    UIView *toast = [self toastViewForMessage:message title:title image:image style:style buttonStyle:buttonStyle];
+    [self showToast:toast duration:duration position:position completion:completion];
+}
+
 
 #pragma mark - Show Toast Methods
 
@@ -215,7 +221,7 @@ static const NSString * CSToastQueueKey             = @"CSToastQueueKey";
 
 #pragma mark - View Construction
 
-- (UIView *)toastViewForMessage:(NSString *)message title:(NSString *)title image:(UIImage *)image style:(CSToastStyle *)style {
+- (UIView *)toastViewForMessage:(NSString *)message title:(NSString *)title image:(UIImage *)image style:(CSToastStyle *)style buttonStyle:(CSToastStyle *)buttonStyle {
     // sanity
     if (message == nil && title == nil && image == nil) return nil;
     
@@ -227,6 +233,7 @@ static const NSString * CSToastQueueKey             = @"CSToastQueueKey";
     // dynamically build a toast view with any combination of message, title, & image
     UILabel *messageLabel = nil;
     UILabel *titleLabel = nil;
+    UILabel *buttonLabel = nil;
     UIImageView *imageView = nil;
     
     UIView *wrapperView = [[UIView alloc] init];
@@ -286,12 +293,37 @@ static const NSString * CSToastQueueKey             = @"CSToastQueueKey";
         messageLabel.backgroundColor = [UIColor clearColor];
         messageLabel.alpha = 1.0;
         messageLabel.text = message;
+
+        float buttonWidth = 0.0;
+        if(buttonStyle != nil) {
+            buttonWidth = buttonStyle.buttonSize.width;
+        }
         
-        CGSize maxSizeMessage = CGSizeMake((self.bounds.size.width * style.maxWidthPercentage) - imageRect.size.width, self.bounds.size.height * style.maxHeightPercentage);
+        CGSize maxSizeMessage = CGSizeMake((self.bounds.size.width * style.maxWidthPercentage) - imageRect.size.width - buttonWidth, self.bounds.size.height * style.maxHeightPercentage);
         CGSize expectedSizeMessage = [messageLabel sizeThatFits:maxSizeMessage];
         // UILabel can return a size larger than the max size when the number of lines is 1
         expectedSizeMessage = CGSizeMake(MIN(maxSizeMessage.width, expectedSizeMessage.width), MIN(maxSizeMessage.height, expectedSizeMessage.height));
         messageLabel.frame = CGRectMake(0.0, 0.0, expectedSizeMessage.width, expectedSizeMessage.height);
+    }
+    
+    if (buttonStyle != nil) {
+        buttonLabel = [[UILabel alloc] init];
+        buttonLabel.layer.cornerRadius = buttonStyle.cornerRadius;
+        buttonLabel.numberOfLines = buttonStyle.messageNumberOfLines;
+        buttonLabel.font = buttonStyle.messageFont;
+        buttonLabel.textAlignment = buttonStyle.messageAlignment;
+        buttonLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+        buttonLabel.textAlignment = NSTextAlignmentCenter;
+        buttonLabel.textColor = buttonStyle.messageColor;
+        buttonLabel.backgroundColor = buttonStyle.backgroundColor;
+        buttonLabel.alpha = 1.0;
+        buttonLabel.text = @"Learn More";
+        
+        CGSize maxSizeButton = CGSizeMake((self.bounds.size.width * style.maxWidthPercentage) - imageRect.size.width - messageLabel.frame.size.width, self.bounds.size.height * style.maxHeightPercentage);
+        CGSize expectedSizeButton = [buttonLabel sizeThatFits:maxSizeButton];
+        // UILabel can return a size larger than the max size when the number of lines is 1
+        expectedSizeButton = CGSizeMake(MIN(maxSizeButton.width, expectedSizeButton.width), MIN(maxSizeButton.height, expectedSizeButton.height));
+        buttonLabel.frame = CGRectMake(0.0, 0.0, expectedSizeButton.width, expectedSizeButton.height);
     }
     
     CGRect titleRect = CGRectZero;
@@ -312,7 +344,17 @@ static const NSString * CSToastQueueKey             = @"CSToastQueueKey";
         messageRect.size.height = messageLabel.bounds.size.height;
     }
     
-    CGFloat longerWidth = MAX(titleRect.size.width, messageRect.size.width);
+    CGRect buttonRect = CGRectZero;
+    
+    if(buttonLabel != nil) {
+        buttonRect.origin.x = messageRect.origin.x + messageRect.size.width;
+        buttonRect.origin.y = titleRect.origin.y + titleRect.size.height + buttonStyle.verticalPadding;
+        buttonRect.size.width = buttonLabel.bounds.size.width + buttonStyle.horizontalPadding * 2;
+        buttonRect.size.height = buttonLabel.bounds.size.height + buttonStyle.verticalPadding * 2;
+    }
+    
+    
+    CGFloat longerWidth = MAX(titleRect.size.width + buttonRect.size.width, messageRect.size.width + buttonRect.size.width);
     CGFloat longerX = MAX(titleRect.origin.x, messageRect.origin.x);
     
     // Wrapper width uses the longerWidth or the image width, whatever is larger. Same logic applies to the wrapper height.
@@ -329,6 +371,11 @@ static const NSString * CSToastQueueKey             = @"CSToastQueueKey";
     if(messageLabel != nil) {
         messageLabel.frame = messageRect;
         [wrapperView addSubview:messageLabel];
+    }
+    
+    if(buttonLabel != nil) {
+        buttonLabel.frame = buttonRect;
+        [wrapperView addSubview:buttonLabel];
     }
     
     if(imageView != nil) {
@@ -483,6 +530,7 @@ static const NSString * CSToastQueueKey             = @"CSToastQueueKey";
         self.shadowRadius = 6.0;
         self.shadowOffset = CGSizeMake(4.0, 4.0);
         self.imageSize = CGSizeMake(80.0, 80.0);
+        self.buttonSize = CGSizeMake(80.0, 80.0);
         self.activitySize = CGSizeMake(100.0, 100.0);
         self.fadeDuration = 0.2;
     }
